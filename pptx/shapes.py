@@ -13,6 +13,9 @@ Classes that implement PowerPoint shapes such as picture, textbox, and table.
 
 from numbers import Number
 
+import xlsxwriter
+import string
+
 from pptx.constants import MSO
 from pptx.oxml import (
     _get_or_add, qn, _Element, _SubElement, CT_GraphicalObjectFrame,
@@ -436,6 +439,7 @@ class _ShapeCollection(_BaseShape, Collection):
         super(_ShapeCollection, self).__init__(spTree)
         self.__spTree = spTree
         self.__slide = slide
+        
         self.__shapes = self._values
         # unmarshal shapes
         for elm in spTree.iterchildren():
@@ -531,6 +535,54 @@ class _ShapeCollection(_BaseShape, Collection):
         table = _Table(graphicFrame)
         self.__shapes.append(table)
         return table
+    # Added by Hussain Place Holder
+    def add_chart(self, left, top, width, height,data,headings_xlsx):
+        """
+        adding xlsx writer for excel file that is stored in /temp/ folder
+        
+        """
+        #name = 'temp/Worksheet.xlsx'
+        workbook = xlsxwriter.Workbook('temp/Worksheet.xlsx')
+        worksheet = workbook.add_worksheet()
+        bold = workbook.add_format({'bold': 1})
+    
+        # Add the worksheet data that the charts will refer to.
+        
+        
+        for i,e in enumerate(headings_xlsx):
+            if i ==0:
+                worksheet.write_row('A1', headings_xlsx, bold)
+                worksheet.write_column(string.uppercase[i]+'2',data[i])
+            else:
+                worksheet.write_column(string.uppercase[i]+'2',data[i])
+        
+        """
+        
+        
+        
+        """
+        
+        
+        id = self.__next_shape_id
+        chart, rel = self.__slide._add_chart(data,headings_xlsx,'temp/Worksheet.xlsx')
+        rId = rel._rId
+        
+        name = 'Chart %d' % (id-1)
+        graphicFrame = CT_GraphicalObjectFrame.new_chart(
+            id,rId, name, left, top, width, height)
+        self.__spTree.append(graphicFrame)
+
+        return graphicFrame
+    
+    def add_xlsx(self, file):
+        """
+        Add picture shape displaying image in *file*, where *file* can be
+        either a path to a file (a string) or a file-like object.
+        """
+        image, rel = self.__slide._add_xlsx(file)
+
+        
+        
 
     def add_textbox(self, left, top, width, height):
         """

@@ -66,6 +66,22 @@ class Presentation(object):
         presentation.
         """
         return self.__presentation.slides
+    
+    @property
+    def charts(self):
+        """
+        |_SlideCollection| object containing the slides in this
+        presentation.
+        """
+        return self.__presentation.charts
+    
+    @property
+    def xlsx(self):
+        """
+        |_SlideCollection| object containing the slides in this
+        presentation.
+        """
+        return self.__presentation.xlsx
 
     def save(self, file):
         """

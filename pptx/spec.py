@@ -1616,6 +1616,11 @@ CT_WORKSHEET = (
 RT_CHART = (
     'http://schemas.openxmlformats.org/officeDocument/2006/relationships/char'
     't')
+
+RT_EXCEL_XLSX= (
+    'http://schemas.openxmlformats.org/officeDocument/2006/relationships/packag'
+    'e')
+
 RT_COMMENT_AUTHORS = (
     'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comm'
     'entAuthors')
@@ -1841,6 +1846,28 @@ pml_parttypes = {
         'has_rels':    PTS_HASRELS_ALWAYS,
         'rels_from':   ['presentation', 'notesSlide'],
         'reltype':     RT_SLIDE},
+    #Added by Hussain for Charts creates chart1.xml etc. with rels from slides         
+    CT_CHART: {  # ECMA-376-1 13.3.8
+        'basename':    'chart',
+        'ext':         '.xml',
+        'name':        'Chart Part',
+        'cardinality': PTS_CARDINALITY_TUPLE,
+        'required':    False,
+        'baseURI':     '/ppt/charts',
+        'has_rels':    PTS_HASRELS_ALWAYS,
+        'rels_from':   ['handoutMaster', 'notesSlide', 'notesMaster', 'slide',
+                        'slideLayout', 'slideMaster'],
+        'reltype':     RT_CHART},         
+    CT_EXCEL_XLSX: {  # ECMA-376-1 13.3.8
+        'basename':    'Microsoft_Excel_Worksheet',
+        'ext':         '.xlsx',
+        'name':        'Excel Part',
+        'cardinality': PTS_CARDINALITY_TUPLE,
+        'required':    False,
+        'baseURI':     'ppt/embeddings',
+        'has_rels':    PTS_HASRELS_ALWAYS,
+        'rels_from':   ['chart'],
+        'reltype':     RT_EXCEL_XLSX},     
     CT_SLIDE_LAYOUT: {  # ECMA-376-1 13.3.9
         'basename':    'slideLayout',
         'ext':         '.xml',
@@ -2036,6 +2063,9 @@ default_content_types = {
 
 nsmap = {
     'a':   'http://schemas.openxmlformats.org/drawingml/2006/main',
+    'c':   'http://schemas.openxmlformats.org/drawingml/2006/chart',
+    'p14':'http://schemas.microsoft.com/office/powerpoint/2010/main',
+    'mc':'http://schemas.openxmlformats.org/markup-compatibility/2006',
     'cp':  ('http://schemas.openxmlformats.org/package/2006/metadata/core-pro'
             'perties'),
     'ct':  'http://schemas.openxmlformats.org/package/2006/content-types',

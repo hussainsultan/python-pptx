@@ -13,6 +13,8 @@ encounters as an end-user of the PowerPoint user interface.
 """
 
 import hashlib
+from lxml import etree, objectify
+
 
 try:
     from PIL import Image as PIL_Image
@@ -33,20 +35,24 @@ import pptx.util as util
 from pptx.exceptions import InvalidPackageError
 from pptx.oxml import (
     CT_CoreProperties, _Element, _SubElement, oxml_fromstring, oxml_tostring,
-    qn
+    qn,CT_Chart_Container
 )
 from pptx.shapes import _ShapeCollection
 from pptx.spec import namespaces
 from pptx.spec import (
-    CT_CORE_PROPS, CT_PRESENTATION, CT_SLIDE, CT_SLIDE_LAYOUT,
+    CT_CORE_PROPS, CT_PRESENTATION, CT_SLIDE, CT_SLIDE_LAYOUT,CT_CHART,
     CT_SLIDE_MASTER, CT_SLIDESHOW, CT_TEMPLATE
 )
 from pptx.spec import (
-    RT_CORE_PROPS, RT_IMAGE, RT_OFFICE_DOCUMENT, RT_SLIDE, RT_SLIDE_LAYOUT,
+    RT_CORE_PROPS, RT_IMAGE, RT_OFFICE_DOCUMENT, RT_SLIDE, RT_SLIDE_LAYOUT,RT_CHART,RT_EXCEL_XLSX,
     RT_SLIDE_MASTER
 )
 
 from pptx.util import Collection, Px
+
+#temperorary workaround for worksheet numbers
+#global variable 
+wsID = 0
 
 # default namespace map for use in lxml calls
 _nsmap = namespaces('a', 'r', 'p')
@@ -87,6 +93,9 @@ class _Package(object):
         self.__core_properties = None
         self.__relationships = _RelationshipCollection()
         self.__images = _ImageCollection()
+        self.__charts = _ChartCollection(self)
+        self.__xlsx = _xlsxCollection(self)
+        
         self.__instances.append(weakref.ref(self))
         if file is None:
             file = self.__default_pptx_path
@@ -138,7 +147,15 @@ class _Package(object):
     @property
     def _images(self):
         return self.__images
-
+    
+    @property
+    def _charts(self):
+        return self.__charts
+    
+    @property
+    def _xlsx(self):
+        return self.__xlsx
+    
     @property
     def _relationships(self):
         return self.__relationships
@@ -305,6 +322,7 @@ class _RelationshipCollection(Collection):
         self._values.append(relationship)
         self.__resequence()
         # register as observer of partname changes
+       
         relationship._target.add_observer(self)
 
     @property
@@ -547,6 +565,8 @@ class _Part(object):
             return _SlideMaster()
         elif reltype == RT_IMAGE:
             return _Image()
+        elif reltype== RT_CHART:
+            return _Chart()
         return _BasePart()
 
 
@@ -734,6 +754,8 @@ class Presentation(_BasePart):
         super(Presentation, self).__init__()
         self.__slidemasters = _PartCollection()
         self.__slides = _SlideCollection(self)
+        self.__charts = _ChartCollection(self)
+        self.__xlsx = _xlsxCollection(self)
 
     @property
     def slidemasters(self):
@@ -748,6 +770,12 @@ class Presentation(_BasePart):
         |_SlideCollection| object containing the slides in this presentation.
         """
         return self.__slides
+    @property
+    def charts(self):
+        """
+        |_SlideCollection| object containing the slides in this presentation.
+        """
+        return self.__charts
 
     @property
     def _blob(self):
@@ -1038,7 +1066,31 @@ class _BaseSlide(_BasePart):
         image = self._package._images.add_image(file)
         rel = self._add_relationship(RT_IMAGE, image)
         return (image, rel)
+    
+    def _add_chart(self,data,headings_xlsx,file):
+        """
+        Return a tuple ``(image, relationship)`` representing the |Image| part
+        specified by *file*. If a matching image part already exists it is
+        reused. If the slide already has a relationship to an existing image,
+        that relationship is reused.
+        """
+        image = self._package._charts.add_chart(data,headings_xlsx,file)
+        rel = self._add_relationship(RT_CHART, image)
+        return (image, rel)
+    
+    def _add_xlsx(self,file):
+        """
+        Return a tuple ``(image, relationship)`` representing the |Image| part
+        specified by *file*. If a matching image part already exists it is
+        reused. If the slide already has a relationship to an existing image,
+        that relationship is reused.
+        """
+        image = self._package._xlsx.add_xlsx(file)
+        rel = self._add_relationship(RT_EXCEL_XLSX, image)
+        return (image, rel)
 
+
+    
     def _load(self, pkgpart, part_dict):
         """Handle aspects of loading that are general to slide types."""
         # call parent to do generic aspects of load
@@ -1173,3 +1225,194 @@ class _SlideMaster(_BaseSlide):
             if rel._reltype == RT_SLIDE_LAYOUT:
                 self.__slidelayouts._loadpart(rel._target)
         return self
+    
+    
+# ============================================================================
+# Chart Parts
+# ============================================================================
+
+
+class _ChartCollection(_PartCollection,):
+    """
+    Immutable sequence of charts belonging to an instance of |Presentation|,
+    with methods for manipulating the charts in the presentation.
+    """
+    def __init__(self, presentation):
+        super(_ChartCollection, self).__init__()
+        self.__presentation = presentation
+        #self.__relationships = _RelationshipCollection()
+        
+
+
+    def add_chart(self,data,headings_xlsx,file):
+        """Add a new slide that inherits layout from *slidelayout*."""
+        # 1. construct new slide
+        chart = _Chart(data,headings_xlsx,file)
+        #chart = CT_Chart_Container.new_chart(data,headings_xlsx)
+        # 2. add it to this collection
+        self._values.append(chart)
+        # 3. assign its partname
+        self.__rename_charts()
+        # 4. add presentation->slide relationship
+        #self.__presentation._add_relationship(RT_CHART, chart)
+        # 5. return reference to new slide
+        #rel = self.__presentation._add_relationship(RT_CHART, chart)
+        #print rel
+        return chart
+    
+
+    def __rename_charts(self):
+        """
+        Assign partnames like ``/ppt/slides/slide9.xml`` to all slides in the
+        collection. The name portion is always ``slide``. The number part
+        forms a continuous sequence starting at 1 (e.g. 1, 2, 3, ...). The
+        extension is always ``.xml``.
+        """
+        for idx, slide in enumerate(self._values):
+            slide.partname = '/ppt/charts/chart%d.xml' % (idx+1)
+
+        
+
+
+
+            
+class _Chart(_BaseSlide):
+    """
+    Slide part. Corresponds to package files ppt/slides/slide[1-9][0-9]*.xml.
+    """
+    def __init__(self,data, headings_xlsx,file):
+        super(_Chart, self).__init__(CT_CHART)
+        #self._values= self.__minimal_element
+        
+        
+        self.xlsx = _xlsxCollection(self)
+        xlsx = self.xlsx.add_xlsx(file)
+        rel =self._add_relationship(RT_EXCEL_XLSX, xlsx)
+        rId = rel._rId
+        print rId[3:]
+        
+        
+        chrt = self.add_chart(data,headings_xlsx,rId)
+        self._element=chrt
+        #self._element = self.__chart_full(data, headings_xlsx)
+
+    def _load(self, pkgpart, part_dict):
+        """
+        Load chart from package part.
+        """
+        # call parent to do generic aspects of load
+        super(_Chart, self)._load(pkgpart, part_dict)
+
+        return self
+
+    @property
+    def __minimal_element(self):
+        """
+        Return element containing the minimal XML for a slide, based on what
+        is required by the XMLSchema.
+        """
+        sld = _Element('p:sld', _nsmap)
+        
+      
+        return 
+    
+    @staticmethod
+    def add_chart (data,headings_xlsx,rId):
+        chrt = CT_Chart_Container.new_chart(data,headings_xlsx,rId)
+        return chrt
+    
+# ============================================================================
+# Excel xlsx Parts
+# ============================================================================
+
+
+class _xlsxCollection(_PartCollection):
+    """
+ 
+    """
+    def __init__(self,presentation):
+        super(_xlsxCollection, self).__init__()
+        self.__presentation = presentation
+
+    def add_xlsx(self, file):
+        """
+        
+        """
+        # use _Image constructor to validate and characterize image file
+        xlsx = _Xlsx(file)
+        self._values.append(xlsx)
+        self.__rename_xlsx()
+        return xlsx
+
+    def __rename_xlsx(self):
+        """
+        Assign partnames like ``/ppt/media/image9.png`` to all images in the
+        collection. The name portion is always ``image``. The number part
+        forms a continuous sequence starting at 1 (e.g. 1, 2, 3, ...). The
+        extension is preserved during renaming.
+        """
+        for idx, image in enumerate(self._values):
+            global wsID
+            wsID = wsID +1
+            #print wsID
+            image.partname = '/ppt/embeddings/Microsoft_Excel_Worksheet%d.xlsx' % (wsID)
+            
+
+
+
+class _Xlsx(_BasePart):
+    """
+    Return new Image part instance. *file* may be |None|, a path to a file (a
+    string), or a file-like object. If *file* is |None|, no image is loaded
+    and :meth:`_load` must be called before using the instance. Otherwise, the
+    file referenced or contained in *file* is loaded. Corresponds to package
+    files ppt/media/image[1-9][0-9]*.*.
+    """
+    def __init__(self, file=None):
+        super(_Xlsx, self).__init__()
+        self.__filepath = None
+        self.__ext = None
+        if file is not None:
+            self.__load_image_from_file(file)
+
+    @property
+    def _blob(self):
+        """
+        For an image, _blob is always _load_blob, image file content is not
+        manipulated.
+        """
+        return self._load_blob
+
+    def _load(self, pkgpart, part_dict):
+        """Handle aspects of loading that are particular to image parts."""
+        # call parent to do generic aspects of load
+        super(_Xlsx, self)._load(pkgpart, part_dict)
+        # set file extension
+        self.__ext = posixpath.splitext(pkgpart.partname)[1]
+        # return self-reference to allow generative calling
+        return self
+
+    @staticmethod
+    def __image_ext_content_type(ext):
+        """Return the content type corresponding to filename extension *ext*"""
+        if ext not in spec.default_content_types:
+            tmpl = "unsupported image file extension '%s'"
+            raise TypeError(tmpl % (ext))
+        content_type = spec.default_content_types[ext]
+
+        return content_type
+
+
+    def __load_image_from_file(self, file):
+        """
+        Load image from *file*, which is either a path to an image file or a
+        file-like object.
+        """
+        if isinstance(file, basestring):  # file is a path
+            self.__filepath = file
+            self.__ext = os.path.splitext(self.__filepath)[1]
+            self._content_type = self.__image_ext_content_type(self.__ext)
+            with open(self.__filepath, 'rb') as f:
+                self._load_blob = f.read()
+ 
+
